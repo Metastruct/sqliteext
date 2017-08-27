@@ -1,0 +1,23 @@
+{
+  "name": "gmod-sqliteext",
+  "version": "0.1.0",
+  "description": "Experimental GMod SQlite extensions ",
+  "files": ["lua/includes/modules/sqlext.lua"],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Metastruct/sqliteext.git"
+  },
+  "keywords": [
+    "gmod",
+    "garrysmod",
+    "sql"
+  ],
+  "author": "Python1320",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/Metastruct/sqliteext/issues"
+  },
+  "homepage": "https://github.com/Metastruct/sqliteext",
+  "dependencies": {
+  }
+}
