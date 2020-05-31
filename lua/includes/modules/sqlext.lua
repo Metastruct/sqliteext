@@ -4,6 +4,8 @@ AddCSLuaFile()
 
 local sql=sql
 
+local tablevers
+
 -- http://www.sqlite.org/lang_corefunc.html#last_insert_rowid
 function sql.LastRowID()
 	local ret = sql.Query("SELECT last_insert_rowid() as x")[1].x
@@ -77,6 +79,9 @@ function mt:create(infos,after,...)
 	if not sql.TableExists(name) then
 		MsgN("Creating ",name)
 		assert(sql(("CREATE TABLE %%s (%s) %s"):format(infos,after or ""),name,...))
+		if tablevers then
+			tablevers:update("ver = 0 WHERE name = %s",name)
+		end
 	end
 	return self
 end
@@ -136,6 +141,7 @@ function mt:select(vals,extra,...)
 	return self:coercer(self:sql(("SELECT %s FROM %s %s"):format(vals,name,extra or ""),...))
 end
 
+
 local function return_changes(a,...)
 	if a==true then
 		local changes = tonumber(sql'SELECT changes() as changes'[1].changes)
@@ -147,6 +153,12 @@ function mt:update(extra,...)
 	local name = getmetatable(self).name
 	local query = ("UPDATE %s SET %s"):format(name,extra)
 	return return_changes( self:sql( query ,...) )
+end
+
+function mt:alter(extra,...)
+	local name = getmetatable(self).name
+	local query = ("ALTER TABLE %s %s"):format(name,extra)
+	return assert(return_changes( self:sql( query ,...) ))
 end
 
 function mt:delete(extra,...)
@@ -195,3 +207,60 @@ function sql.obj(name)
 end
 
 
+local ok,err = xpcall(function()
+	local t = assert(sql.obj("sqlext"))
+		:create([[
+			`name`		TEXT NOT NULL CHECK(name <> '') UNIQUE,
+			`ver`		INTEGER NOT NULL DEFAULT 0]])
+		:coerce{ver=tonumber}
+	tablevers = t
+end,debug.traceback)
+if not ok then
+	ErrorNoHalt(err..'\n')
+end
+
+local function read_table_version(name)
+	if not tablevers then return nil,'tablevers unavailable' end
+	local ret,err = tablevers:select("*","WHERE name = %s",name)
+	if ret == nil then return nil,err end
+	if ret == true then return false end
+	return ret and ret[1] and ret[1].ver or false
+end
+
+function mt:migrate(cb)
+	local info = getmetatable(self)
+	
+	local name = info.name
+	local _ver = (info._ver or 0) + 1
+	info._ver = _ver
+	
+	if info._migrate_errors then return nil,'migration errors' end
+	
+	local table_version = read_table_version(name)
+	if table_version == nil then
+		return self
+	elseif not table_version then
+		table_version = 0
+		tablevers:insert{name=name,ver=1}
+	end
+	if _ver <= table_version then
+		return self
+	end
+	
+	local ok,ret = xpcall(cb,debug.traceback,self,name)
+	
+	if not ok then
+		ErrorNoHalt(ret..'\n')
+		info._migrate_errors = true
+		return nil,'migration errors'
+	end
+	
+	if ret==false then
+		return self
+	end
+	
+	tablevers:update("ver = %d WHERE name = %s",_ver,name)
+	MsgN("Upgraded ",name," to version ",_ver)
+	
+	return self
+end
